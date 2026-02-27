@@ -108,6 +108,7 @@ function DepletingBar({ spent, total, color, showPace = true }) {
 function QuickExpenseModal({ category, onSave, onClose }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [saved, setSaved] = useState(false);
 
   const save = () => {
@@ -117,7 +118,7 @@ function QuickExpenseModal({ category, onSave, onClose }) {
       amount: parseFloat(amount),
       category: category.name,
       note: note.trim(),
-      date: new Date().toISOString().split("T")[0],
+      date,
       timestamp: Date.now(),
     });
     setSaved(true);
@@ -160,8 +161,13 @@ function QuickExpenseModal({ category, onSave, onClose }) {
           id="qe-note"
           placeholder="Комментарий (необязательно)" value={note}
           onChange={e => setNote(e.target.value)}
-          style={{ ...inputSmall, padding: "9px 12px", marginBottom: 12 }}
+          style={{ ...inputSmall, padding: "9px 12px", marginBottom: 10 }}
           onKeyDown={e => e.key === "Enter" && save()}
+        />
+        <input
+          type="date" value={date}
+          onChange={e => setDate(e.target.value)}
+          style={{ ...inputSmall, padding: "7px 12px", marginBottom: 12, fontSize: 13, color: T.textMid }}
         />
 
         <div style={{ display: "flex", gap: 8 }}>
@@ -603,6 +609,7 @@ function AddExpense({ budget, onSave, onBack }) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [saved, setSaved] = useState(false);
 
   const cats = budget?.categories || [];
@@ -614,11 +621,11 @@ function AddExpense({ budget, onSave, onBack }) {
       amount: parseFloat(amount),
       category,
       note: note.trim(),
-      date: new Date().toISOString().split("T")[0],
+      date,
       timestamp: Date.now(),
     });
     setSaved(true);
-    setTimeout(() => { setSaved(false); setAmount(""); setCategory(""); setNote(""); }, 1200);
+    setTimeout(() => { setSaved(false); setAmount(""); setCategory(""); setNote(""); setDate(new Date().toISOString().split("T")[0]); }, 1200);
   };
 
   if (cats.length === 0) {
@@ -668,13 +675,22 @@ function AddExpense({ budget, onSave, onBack }) {
         </div>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <label style={label}>Описание <span style={{ color: T.textLight }}>(необязательно)</span></label>
         <input
           placeholder="Что купил?" value={note}
           onChange={e => setNote(e.target.value)}
           style={inputSmall}
           onKeyDown={e => e.key === "Enter" && save()}
+        />
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <label style={label}>Дата</label>
+        <input
+          type="date" value={date}
+          onChange={e => setDate(e.target.value)}
+          style={{ ...inputSmall, padding: "8px 12px", color: T.textMid }}
         />
       </div>
 
@@ -737,8 +753,11 @@ function BudgetApp() {
   }, []);
 
   const addTransaction = useCallback(async (t) => {
-    setTransactions(prev => [...prev, t]);
-    await db.addTransaction(viewMonth, t);
+    const tMonth = t.date.slice(0, 7);
+    if (tMonth === viewMonth) {
+      setTransactions(prev => [...prev, t]);
+    }
+    await db.addTransaction(tMonth, t);
   }, [viewMonth]);
 
   const planNextMonth = useCallback(() => {
