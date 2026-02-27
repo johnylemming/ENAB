@@ -29,6 +29,10 @@ const daysPassed = () => new Date().getDate();
 const monthProgress = () => daysPassed() / daysInMonth();
 const monthLabel = () => new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
 const todayLabel = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", weekday: "long" });
+const shiftMonth = (ms, delta) => { const [y, m] = ms.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const monthLabelFor = (ms) => { const [y, m] = ms.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }); };
+const daysInMonthFor = (ms) => { const [y, m] = ms.split("-").map(Number); return new Date(y, m, 0).getDate(); };
+const isCurrentMonth = (ms) => ms === monthKey();
 const pluralDays = (n) => n === 1 ? "день" : (n >= 2 && n <= 4) ? "дня" : "дней";
 
 const CAT_COLORS = [
@@ -77,10 +81,10 @@ function exportCSV(transactions) {
 }
 
 // ─── Depleting Bar with pace shadow ─────────────────────────────────
-function DepletingBar({ spent, total, color }) {
+function DepletingBar({ spent, total, color, showPace = true }) {
   const remainPct = total > 0 ? Math.max(0, ((total - spent) / total) * 100) : 0;
   const over = spent > total;
-  const idealRemainPct = Math.max(0, (1 - monthProgress()) * 100);
+  const idealRemainPct = showPace ? Math.max(0, (1 - monthProgress()) * 100) : 0;
 
   return (
     <div style={{ height: 8, borderRadius: 4, background: T.barTrack, overflow: "hidden", position: "relative" }}>
@@ -177,7 +181,7 @@ function QuickExpenseModal({ category, onSave, onClose }) {
 }
 
 // ─── Category Card (clickable) ──────────────────────────────────────
-function CategoryCard({ cat, index, spentAmount, onClick }) {
+function CategoryCard({ cat, index, spentAmount, onClick, showPace = true }) {
   const s = spentAmount || 0;
   const remaining = cat.amount - s;
   const color = CAT_COLORS[index % CAT_COLORS.length];
@@ -202,7 +206,7 @@ function CategoryCard({ cat, index, spentAmount, onClick }) {
           {fmt(remaining)}
         </span>
       </div>
-      <DepletingBar spent={s} total={cat.amount} color={color} />
+      <DepletingBar spent={s} total={cat.amount} color={color} showPace={showPace} />
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono', monospace" }}>
         <span>−{fmt(s)}</span>
         <span>{fmt(cat.amount)}</span>
@@ -215,7 +219,7 @@ function CategoryCard({ cat, index, spentAmount, onClick }) {
 const PINNED = ["Продукты", "Транспорт", "Ребёнок"];
 
 // ─── DASHBOARD ──────────────────────────────────────────────────────
-function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
+function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMonth, onChangeMonth, onPlanNextMonth, nextMonthExists }) {
   const cats = budget?.categories || [];
   const totalBudget = budget?.total || 0;
   const allocated = cats.reduce((a, c) => a + c.amount, 0);
@@ -226,7 +230,10 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
     return map;
   }, [transactions]);
   const totalSpent = Object.values(spent).reduce((a, b) => a + b, 0);
-  const days = daysLeft();
+  const isCurrent = isCurrentMonth(viewMonth);
+  const days = isCurrent ? daysLeft() : 0;
+  const maxMonth = shiftMonth(monthKey(), 1);
+  const canGoForward = viewMonth < maxMonth;
 
   const [expanded, setExpanded] = useState(false);
   const [modalCat, setModalCat] = useState(null);
@@ -236,12 +243,21 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
 
   if (!budget || cats.length === 0) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 24, padding: 32 }}>
-        <div style={{ fontSize: 48, opacity: 0.3 }}>📊</div>
-        <p style={{ color: T.textMid, fontSize: 16, textAlign: "center", lineHeight: 1.6, maxWidth: 320 }}>
-          Бюджет на {monthLabel()} ещё не составлен.
-        </p>
-        <button onClick={() => onNavigate("plan")} style={btnPrimary}>Распланировать бюджет</button>
+      <div style={{ padding: "20px 16px", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 24, marginTop: 8 }}>
+          <button onClick={() => onChangeMonth(shiftMonth(viewMonth, -1))} style={navArrow}>◀</button>
+          <span style={{ color: T.text, fontSize: 16, fontWeight: 600, minWidth: 160, textAlign: "center" }}>
+            {isCurrent ? todayLabel() : monthLabelFor(viewMonth)}
+          </span>
+          <button onClick={() => canGoForward && onChangeMonth(shiftMonth(viewMonth, 1))} style={{ ...navArrow, opacity: canGoForward ? 1 : 0.25 }} disabled={!canGoForward}>▶</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 24, padding: 32 }}>
+          <div style={{ fontSize: 48, opacity: 0.3 }}>📊</div>
+          <p style={{ color: T.textMid, fontSize: 16, textAlign: "center", lineHeight: 1.6, maxWidth: 320 }}>
+            Бюджет на {monthLabelFor(viewMonth)} ещё не составлен.
+          </p>
+          <button onClick={() => onNavigate("plan")} style={btnPrimary}>Распланировать бюджет</button>
+        </div>
       </div>
     );
   }
@@ -261,10 +277,14 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
         background: T.card, borderRadius: 18, padding: "24px 22px", marginBottom: 20,
         border: `1px solid ${T.cardBorder}`, boxShadow: `0 2px 12px ${T.shadow}`,
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-          <span style={{ color: T.textMid, fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}>
-            {todayLabel()}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 10 }}>
+          <button onClick={() => onChangeMonth(shiftMonth(viewMonth, -1))} style={navArrow}>◀</button>
+          <span style={{ color: T.text, fontSize: 16, fontWeight: 600, minWidth: 160, textAlign: "center" }}>
+            {isCurrent ? todayLabel() : monthLabelFor(viewMonth)}
           </span>
+          <button onClick={() => canGoForward && onChangeMonth(shiftMonth(viewMonth, 1))} style={{ ...navArrow, opacity: canGoForward ? 1 : 0.25 }} disabled={!canGoForward}>▶</button>
+        </div>
+        {isCurrent && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
           <span style={{
             fontSize: 12, fontFamily: "'JetBrains Mono', monospace",
             color: days <= 5 ? T.danger : T.accent,
@@ -273,14 +293,14 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
           }}>
             {days} {pluralDays(days)} до конца
           </span>
-        </div>
+        </div>}
         <div style={{ fontSize: 34, fontWeight: 700, color: T.text, fontFamily: "'JetBrains Mono', monospace", margin: "8px 0 6px" }}>
           {fmt(totalBudget - totalSpent)}
         </div>
         <div style={{ color: T.textMid, fontSize: 13, marginBottom: 14 }}>
           потрачено {fmt(totalSpent)} из {fmt(totalBudget)}
         </div>
-        <DepletingBar spent={totalSpent} total={totalBudget} color={T.accent} />
+        <DepletingBar spent={totalSpent} total={totalBudget} color={T.accent} showPace={isCurrent} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono', monospace" }}>
           <span>осталось</span>
           <span>бюджет</span>
@@ -317,7 +337,7 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {pinnedCats.map(c => {
           const gi = cats.indexOf(c);
-          return <CategoryCard key={c.name} cat={c} index={gi} spentAmount={spent[c.name] || 0} onClick={setModalCat} />;
+          return <CategoryCard key={c.name} cat={c} index={gi} spentAmount={spent[c.name] || 0} onClick={isCurrent ? setModalCat : () => {}} showPace={isCurrent} />;
         })}
       </div>
 
@@ -342,7 +362,7 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
               {otherCats.map(c => {
                 const gi = cats.indexOf(c);
-                return <CategoryCard key={c.name} cat={c} index={gi} spentAmount={spent[c.name] || 0} onClick={setModalCat} />;
+                return <CategoryCard key={c.name} cat={c} index={gi} spentAmount={spent[c.name] || 0} onClick={isCurrent ? setModalCat : () => {}} showPace={isCurrent} />;
               })}
             </div>
           )}
@@ -351,9 +371,14 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-        <button onClick={() => onNavigate("expense")} style={{ ...btnPrimary, flex: 1 }}>+ Трата</button>
+        {isCurrent && <button onClick={() => onNavigate("expense")} style={{ ...btnPrimary, flex: 1 }}>+ Трата</button>}
         <button onClick={() => onNavigate("plan")} style={{ ...btnSecondary, flex: 1 }}>Перепланировать</button>
       </div>
+      {isCurrent && !nextMonthExists && (
+        <button onClick={onPlanNextMonth} style={{ ...btnSecondary, width: "100%", marginTop: 10 }}>
+          Запланировать {monthLabelFor(shiftMonth(viewMonth, 1))}
+        </button>
+      )}
 
       {/* Recent transactions */}
       {transactions.length > 0 && (
@@ -392,10 +417,11 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction }) {
 }
 
 // ─── PLAN BUDGET ────────────────────────────────────────────────────
-function PlanBudget({ budget: existingBudget, onSave, onBack }) {
-  const [step, setStep] = useState(existingBudget ? "categories" : "total");
-  const [total, setTotal] = useState(existingBudget?.total || "");
-  const [categories, setCategories] = useState(existingBudget?.categories || []);
+function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBudget }) {
+  const template = existingBudget || templateBudget;
+  const [step, setStep] = useState(template ? "categories" : "total");
+  const [total, setTotal] = useState(template?.total || "");
+  const [categories, setCategories] = useState(template?.categories ? template.categories.map(c => ({ ...c })) : []);
   const [newCatName, setNewCatName] = useState("");
   const [newCatAmount, setNewCatAmount] = useState("");
   const [editingTotal, setEditingTotal] = useState(false);
@@ -419,14 +445,14 @@ function PlanBudget({ budget: existingBudget, onSave, onBack }) {
   };
 
   const save = () => {
-    onSave({ total: Number(total), categories, month: monthKey() });
+    onSave({ total: Number(total), categories, month: month || monthKey() });
   };
 
   if (step === "total") {
     return (
       <div style={{ padding: "24px 16px", maxWidth: 480, margin: "0 auto" }}>
         <button onClick={onBack} style={btnBack}>← Назад</button>
-        <h2 style={heading}>Сколько денег на {monthLabel()}?</h2>
+        <h2 style={heading}>Сколько денег на {monthLabelFor(month || monthKey())}?</h2>
         <p style={{ color: T.textMid, fontSize: 14, marginBottom: 24 }}>
           Общая сумма, которую нужно распределить по категориям
         </p>
@@ -670,26 +696,56 @@ function BudgetApp() {
   const [budget, setBudget] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const mk = monthKey();
+  const [viewMonth, setViewMonth] = useState(monthKey());
+  const [nextMonthExists, setNextMonthExists] = useState(false);
+  const [templateBudget, setTemplateBudget] = useState(null);
 
   useEffect(() => {
+    setLoaded(false);
     (async () => {
-      const b = await db.getBudget(mk);
-      const t = await db.getTransactions(mk);
-      if (b) { setBudget(b); } else { setBudget(DEFAULT_BUDGET); await db.saveBudget(DEFAULT_BUDGET); }
-      if (t.length > 0) setTransactions(t);
+      const b = await db.getBudget(viewMonth);
+      const t = await db.getTransactions(viewMonth);
+      if (b) {
+        setBudget(b);
+      } else if (isCurrentMonth(viewMonth)) {
+        setBudget(DEFAULT_BUDGET);
+        await db.saveBudget(DEFAULT_BUDGET);
+      } else {
+        setBudget(null);
+      }
+      setTransactions(t.length > 0 ? t : []);
+      if (isCurrentMonth(viewMonth)) {
+        const nb = await db.getBudget(shiftMonth(viewMonth, 1));
+        setNextMonthExists(!!nb);
+      }
       setLoaded(true);
     })();
-  }, [mk]);
+  }, [viewMonth]);
+
+  const changeMonth = useCallback((m) => {
+    setTemplateBudget(null);
+    setViewMonth(m);
+    setScreen("dashboard");
+  }, []);
 
   const saveBudget = useCallback(async (b) => {
-    setBudget(b); await db.saveBudget(b); setScreen("dashboard");
+    setBudget(b);
+    await db.saveBudget(b);
+    setTemplateBudget(null);
+    setViewMonth(b.month);
+    setScreen("dashboard");
   }, []);
 
   const addTransaction = useCallback(async (t) => {
     setTransactions(prev => [...prev, t]);
-    await db.addTransaction(mk, t);
-  }, [mk]);
+    await db.addTransaction(viewMonth, t);
+  }, [viewMonth]);
+
+  const planNextMonth = useCallback(() => {
+    setTemplateBudget(budget);
+    setViewMonth(shiftMonth(monthKey(), 1));
+    setScreen("plan");
+  }, [budget]);
 
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -738,8 +794,8 @@ function BudgetApp() {
       </div>
 
       <div style={{ animation: "fadeIn 0.25s ease" }}>
-        {screen === "dashboard" && <Dashboard budget={budget} transactions={transactions} onNavigate={setScreen} onAddTransaction={addTransaction} />}
-        {screen === "plan" && <PlanBudget budget={budget} onSave={saveBudget} onBack={() => setScreen("dashboard")} />}
+        {screen === "dashboard" && <Dashboard budget={budget} transactions={transactions} onNavigate={setScreen} onAddTransaction={addTransaction} viewMonth={viewMonth} onChangeMonth={changeMonth} onPlanNextMonth={planNextMonth} nextMonthExists={nextMonthExists} />}
+        {screen === "plan" && <PlanBudget budget={budget} onSave={saveBudget} onBack={() => setScreen("dashboard")} month={viewMonth} templateBudget={templateBudget} />}
         {screen === "expense" && <AddExpense budget={budget} onSave={addTransaction} onBack={() => setScreen("dashboard")} />}
       </div>
     </div>
@@ -768,6 +824,11 @@ const btnSecondary = {
 const btnBack = {
   background: "none", border: "none", color: T.accent, cursor: "pointer",
   fontSize: 14, padding: "8px 0", marginBottom: 16, fontFamily: "inherit",
+};
+const navArrow = {
+  background: "none", border: `1px solid ${T.cardBorder}`, color: T.accent,
+  borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center",
+  justifyContent: "center", cursor: "pointer", fontSize: 14, fontFamily: "inherit",
 };
 const heading = {
   fontSize: 22, fontWeight: 700, color: T.text, marginBottom: 8,
