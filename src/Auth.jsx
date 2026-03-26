@@ -57,11 +57,12 @@ export function AuthGate({ children }) {
 
 function LoginScreen() {
   const [email, setEmail] = useState('')
+  const [otp, setOtp] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleLogin = async (e) => {
+  const handleSendCode = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
@@ -73,6 +74,21 @@ function LoginScreen() {
       setError(error.message)
     } else {
       setSent(true)
+    }
+  }
+
+  const handleVerifyCode = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: otp.trim(),
+      type: 'email',
+    })
+    setLoading(false)
+    if (error) {
+      setError(error.message)
     }
   }
 
@@ -101,34 +117,69 @@ function LoginScreen() {
         </p>
 
         {sent ? (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📬</div>
-            <p style={{ color: T.text, fontSize: 15, marginBottom: 8 }}>
-              Письмо отправлено на
-            </p>
-            <p style={{
-              color: T.accent, fontSize: 15, fontWeight: 600,
-              fontFamily: "'JetBrains Mono', monospace",
-              marginBottom: 16,
-            }}>
-              {email}
-            </p>
-            <p style={{ color: T.textMid, fontSize: 13 }}>
-              Нажми на ссылку в письме чтобы войти
-            </p>
-            <button
-              onClick={() => { setSent(false); setEmail('') }}
+          <form onSubmit={handleVerifyCode}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📬</div>
+              <p style={{ color: T.text, fontSize: 15, marginBottom: 4 }}>
+                Код отправлен на
+              </p>
+              <p style={{
+                color: T.accent, fontSize: 15, fontWeight: 600,
+                fontFamily: "'JetBrains Mono', monospace",
+                marginBottom: 0,
+              }}>
+                {email}
+              </p>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              value={otp}
+              onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
               style={{
-                background: 'none', border: 'none', color: T.accent,
-                cursor: 'pointer', fontSize: 13, marginTop: 16,
-                fontFamily: 'inherit', textDecoration: 'underline',
+                width: '100%', background: T.bg,
+                border: `1px solid ${T.cardBorder}`, borderRadius: 12,
+                padding: '14px 16px', color: T.text, fontSize: 24,
+                fontFamily: "'JetBrains Mono', monospace",
+                marginBottom: 12, boxSizing: 'border-box',
+                outline: 'none', textAlign: 'center', letterSpacing: '0.3em',
+              }}
+              autoFocus
+            />
+            {error && (
+              <p style={{ color: T.danger, fontSize: 13, marginBottom: 12 }}>{error}</p>
+            )}
+            <button
+              type="submit"
+              disabled={otp.length !== 6 || loading}
+              style={{
+                width: '100%', background: T.accent, border: 'none',
+                color: '#fff', borderRadius: 12, padding: '14px 24px',
+                fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'inherit',
+                opacity: (otp.length !== 6 || loading) ? 0.5 : 1,
               }}
             >
-              Другой email
+              {loading ? 'Проверяю...' : 'Войти'}
             </button>
-          </div>
+            <div style={{ textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => { setSent(false); setOtp(''); setError('') }}
+                style={{
+                  background: 'none', border: 'none', color: T.accent,
+                  cursor: 'pointer', fontSize: 13, marginTop: 16,
+                  fontFamily: 'inherit', textDecoration: 'underline',
+                }}
+              >
+                Другой email
+              </button>
+            </div>
+          </form>
         ) : (
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleSendCode}>
             <input
               type="email"
               placeholder="email@example.com"
@@ -158,7 +209,7 @@ function LoginScreen() {
                 opacity: (!email.trim() || loading) ? 0.5 : 1,
               }}
             >
-              {loading ? 'Отправляю...' : 'Войти по ссылке'}
+              {loading ? 'Отправляю...' : 'Получить код'}
             </button>
           </form>
         )}
