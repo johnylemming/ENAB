@@ -1170,9 +1170,12 @@ function calculatePocketBalances(pockets, allBudgets, allCategoryTxns, pocketTxn
 
   for (const pocket of pockets) {
     let balance = pocket.initial_balance || 0;
-    // Прибавить остатки за все ПРОШЛЫЕ месяцы
+    // Месяц создания кармашка — считаем только с него (initial_balance покрывает всё до)
+    const createdMonth = pocket.created_at ? pocket.created_at.slice(0, 7) : currentMonth;
+    // Прибавить остатки за прошлые месяцы начиная с месяца создания
     for (const budget of allBudgets) {
       if (budget.month >= currentMonth) continue;
+      if (budget.month < createdMonth) continue;
       const cat = budget.categories.find(c => c.name === pocket.name);
       if (!cat) continue;
       const spent = txnMapClean[`${pocket.name}::${budget.month}`] || 0;
