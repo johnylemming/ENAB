@@ -31,12 +31,8 @@ export function useSession() {
   return { session, loading }
 }
 
-const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-
 export function AuthGate({ children }) {
   const { session, loading } = useSession()
-
-  if (isLocal) return children
 
   if (loading) {
     return (

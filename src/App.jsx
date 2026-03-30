@@ -225,16 +225,21 @@ function CategoryCard({ cat, index, spentAmount, onClick, showPace = true }) {
 const PINNED = ["Продукты", "Транспорт", "Ребёнок"];
 
 // ─── DASHBOARD ──────────────────────────────────────────────────────
-function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMonth, onChangeMonth, onPlanNextMonth, nextMonthExists }) {
+function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMonth, onChangeMonth, onPlanNextMonth, nextMonthExists, pocketWithdrawalIds = new Set(), pocketNames = new Set() }) {
   const cats = budget?.categories || [];
   const totalBudget = budget?.total || 0;
   const allocated = cats.reduce((a, c) => a + c.amount, 0);
   const unallocated = totalBudget - allocated;
+  // Exclude pocket withdrawals from budget calculations
+  const regularTransactions = useMemo(() =>
+    transactions.filter(t => !pocketWithdrawalIds.has(t.id)),
+    [transactions, pocketWithdrawalIds]
+  );
   const spent = useMemo(() => {
     const map = {};
-    transactions.forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
+    regularTransactions.forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
     return map;
-  }, [transactions]);
+  }, [regularTransactions]);
   const totalSpent = Object.values(spent).reduce((a, b) => a + b, 0);
   const isCurrent = isCurrentMonth(viewMonth);
   const days = isCurrent ? daysLeft() : 0;
@@ -399,23 +404,30 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMon
               CSV ↓
             </button>
           </div>
-          {transactions.slice(-10).reverse().map(t => (
-            <div key={t.id} style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}`,
-            }}>
-              <div>
-                <div style={{ fontSize: 14, color: T.text }}>{t.category}</div>
-                {t.note && <div style={{ fontSize: 12, color: T.textLight, marginTop: 2 }}>{t.note}</div>}
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 14, color: T.danger, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                  −{fmt(t.amount)}
+          {transactions.slice(-10).reverse().map(t => {
+            const isPocketWithdrawal = pocketWithdrawalIds.has(t.id);
+            return (
+              <div key={t.id} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}`,
+              }}>
+                <div>
+                  <div style={{ fontSize: 14, color: T.text }}>
+                    {isPocketWithdrawal && <span style={{ color: "#6B8FBF", marginRight: 4 }}>▤</span>}
+                    {t.category}
+                  </div>
+                  {isPocketWithdrawal && <div style={{ fontSize: 11, color: "#6B8FBF" }}>из кармашка</div>}
+                  {t.note && <div style={{ fontSize: 12, color: T.textLight, marginTop: 2 }}>{t.note}</div>}
                 </div>
-                <div style={{ fontSize: 11, color: T.textLight }}>{t.date}</div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 14, color: isPocketWithdrawal ? "#6B8FBF" : T.danger, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                    −{fmt(t.amount)}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.textLight }}>{t.date}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -423,25 +435,29 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMon
 }
 
 // ─── PLAN BUDGET ────────────────────────────────────────────────────
-function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBudget }) {
+function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBudget, pocketNames }) {
   const template = existingBudget || templateBudget;
   const [step, setStep] = useState(template ? "categories" : "total");
   const [total, setTotal] = useState(template?.total || "");
   const [categories, setCategories] = useState(template?.categories ? template.categories.map(c => ({ ...c })) : []);
   const [newCatName, setNewCatName] = useState("");
   const [newCatAmount, setNewCatAmount] = useState("");
+  const [newCatIsPocket, setNewCatIsPocket] = useState(false);
   const [editingTotal, setEditingTotal] = useState(false);
 
   const allocated = categories.reduce((a, c) => a + c.amount, 0);
   const remaining = (Number(total) || 0) - allocated;
 
-  const addCategory = () => {
+  const addCategory = async () => {
     const name = newCatName.trim();
     const amount = parseFloat(newCatAmount);
     if (!name || isNaN(amount) || amount <= 0) return;
     if (categories.some(c => c.name === name)) return;
     setCategories([...categories, { name, amount }]);
-    setNewCatName(""); setNewCatAmount("");
+    if (newCatIsPocket) {
+      await db.createPocket(name, 0, 0);
+    }
+    setNewCatName(""); setNewCatAmount(""); setNewCatIsPocket(false);
   };
 
   const removeCategory = (name) => setCategories(categories.filter(c => c.name !== name));
@@ -534,7 +550,10 @@ function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBud
               display: "flex", alignItems: "center", gap: 10,
               border: `1px solid ${T.cardBorder}`,
             }}>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: CAT_COLORS[i % CAT_COLORS.length], flexShrink: 0 }} />
+              {pocketNames?.has(c.name)
+                ? <span style={{ color: "#6B8FBF", fontSize: 14, flexShrink: 0 }}>▤</span>
+                : <div style={{ width: 8, height: 8, borderRadius: 4, background: CAT_COLORS[i % CAT_COLORS.length], flexShrink: 0 }} />
+              }
               <span style={{ flex: 1, color: T.text, fontSize: 14 }}>{c.name}</span>
               <input
                 type="number" value={c.amount}
@@ -573,6 +592,14 @@ function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBud
             padding: "0 14px", cursor: "pointer", fontSize: 18, fontWeight: 300,
           }}>+</button>
         </div>
+        <label style={{
+          display: "flex", alignItems: "center", gap: 6, marginTop: 8,
+          fontSize: 12, color: T.textMid, cursor: "pointer",
+        }}>
+          <input type="checkbox" checked={newCatIsPocket} onChange={e => setNewCatIsPocket(e.target.checked)}
+            style={{ accentColor: "#6B8FBF" }} />
+          <span style={{ color: "#6B8FBF" }}>▤</span> Кармашек (копить)
+        </label>
       </div>
 
       {categories.length === 0 && (
@@ -605,30 +632,44 @@ function PlanBudget({ budget: existingBudget, onSave, onBack, month, templateBud
 }
 
 // ─── ADD EXPENSE ────────────────────────────────────────────────────
-function AddExpense({ budget, onSave, onBack }) {
+function AddExpense({ budget, onSave, onBack, pockets = [], pocketBalances = {}, pendingPocket, onClearPendingPocket }) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [saved, setSaved] = useState(false);
+  const [fromPocket, setFromPocket] = useState(!!pendingPocket);
+  const [selectedPocket, setSelectedPocket] = useState(pendingPocket?.name || "");
+
+  // Handle pending pocket from "Потратить" button
+  useEffect(() => {
+    if (pendingPocket) {
+      setFromPocket(true);
+      setSelectedPocket(pendingPocket.name);
+      onClearPendingPocket?.();
+    }
+  }, [pendingPocket, onClearPendingPocket]);
 
   const cats = budget?.categories || [];
 
   const save = () => {
-    if (!amount || !category) return;
+    const cat = fromPocket ? selectedPocket : category;
+    if (!amount || !cat) return;
     onSave({
       id: uid(),
       amount: parseFloat(amount),
-      category,
+      category: cat,
       note: note.trim(),
       date,
       timestamp: Date.now(),
-    });
+    }, fromPocket);
     setSaved(true);
-    setTimeout(() => { setSaved(false); setAmount(""); setCategory(""); setNote(""); setDate(new Date().toISOString().split("T")[0]); }, 1200);
+    setTimeout(() => { setSaved(false); setAmount(""); setCategory(""); setSelectedPocket(""); setNote(""); setDate(new Date().toISOString().split("T")[0]); }, 1200);
   };
 
-  if (cats.length === 0) {
+  const hasPockets = pockets.length > 0;
+
+  if (cats.length === 0 && !hasPockets) {
     return (
       <div style={{ padding: "24px 16px", maxWidth: 480, margin: "0 auto", textAlign: "center", paddingTop: 80 }}>
         <p style={{ color: T.textMid, fontSize: 15, marginBottom: 20 }}>Сначала составь бюджет</p>
@@ -636,6 +677,9 @@ function AddExpense({ budget, onSave, onBack }) {
       </div>
     );
   }
+
+  const pocketColor = "#6B8FBF";
+  const canSave = amount && (fromPocket ? selectedPocket : category);
 
   return (
     <div style={{ padding: "24px 16px", maxWidth: 480, margin: "0 auto" }}>
@@ -652,28 +696,86 @@ function AddExpense({ budget, onSave, onBack }) {
         />
       </div>
 
-      <div style={{ marginBottom: 20 }}>
-        <label style={label}>Категория</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {cats.map((c, i) => {
-            const col = CAT_COLORS[i % CAT_COLORS.length];
-            const sel = category === c.name;
-            return (
-              <button key={c.name} onClick={() => setCategory(c.name)}
-                style={{
-                  background: sel ? col : T.card,
-                  border: sel ? `1px solid ${col}` : `1px solid ${T.cardBorder}`,
-                  color: sel ? "#fff" : T.text,
-                  borderRadius: 10, padding: "10px 14px", fontSize: 13,
-                  cursor: "pointer", fontFamily: "inherit", fontWeight: sel ? 600 : 400,
-                  transition: "all 0.15s",
-                }}>
-                {c.name}
-              </button>
-            );
-          })}
+      {/* Source toggle */}
+      {hasPockets && (
+        <div style={{ marginBottom: 20 }}>
+          <label style={label}>Откуда списать</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { setFromPocket(false); setSelectedPocket(""); }}
+              style={{
+                flex: 1, padding: "10px 14px", fontSize: 13, borderRadius: 10,
+                cursor: "pointer", fontFamily: "inherit", fontWeight: !fromPocket ? 600 : 400,
+                background: !fromPocket ? T.accentLight : T.card,
+                border: !fromPocket ? `1px solid rgba(212,121,60,0.3)` : `1px solid ${T.cardBorder}`,
+                color: !fromPocket ? T.accent : T.textMid,
+                transition: "all 0.15s",
+              }}>Из бюджета</button>
+            <button onClick={() => { setFromPocket(true); setCategory(""); }}
+              style={{
+                flex: 1, padding: "10px 14px", fontSize: 13, borderRadius: 10,
+                cursor: "pointer", fontFamily: "inherit", fontWeight: fromPocket ? 600 : 400,
+                background: fromPocket ? "rgba(107,143,191,0.1)" : T.card,
+                border: fromPocket ? "1px solid rgba(107,143,191,0.3)" : `1px solid ${T.cardBorder}`,
+                color: fromPocket ? pocketColor : T.textMid,
+                transition: "all 0.15s",
+              }}>Из кармашка</button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Category or pocket selector */}
+      {fromPocket ? (
+        <div style={{ marginBottom: 20 }}>
+          <label style={label}>Кармашек</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {pockets.map(p => {
+              const sel = selectedPocket === p.name;
+              const bal = pocketBalances[p.name] || 0;
+              return (
+                <button key={p.name} onClick={() => setSelectedPocket(p.name)}
+                  style={{
+                    background: sel ? pocketColor : T.card,
+                    border: sel ? `1px solid ${pocketColor}` : `1px solid ${T.cardBorder}`,
+                    color: sel ? "#fff" : T.text,
+                    borderRadius: 10, padding: "10px 14px", fontSize: 13,
+                    cursor: "pointer", fontFamily: "inherit", fontWeight: sel ? 600 : 400,
+                    transition: "all 0.15s",
+                  }}>
+                  <span>▤ {p.name}</span>
+                  <span style={{
+                    display: "block", fontSize: 11, marginTop: 2,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: sel ? "rgba(255,255,255,0.8)" : T.textMid,
+                  }}>{fmt(bal)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 20 }}>
+          <label style={label}>Категория</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {cats.map((c, i) => {
+              const col = CAT_COLORS[i % CAT_COLORS.length];
+              const sel = category === c.name;
+              return (
+                <button key={c.name} onClick={() => setCategory(c.name)}
+                  style={{
+                    background: sel ? col : T.card,
+                    border: sel ? `1px solid ${col}` : `1px solid ${T.cardBorder}`,
+                    color: sel ? "#fff" : T.text,
+                    borderRadius: 10, padding: "10px 14px", fontSize: 13,
+                    cursor: "pointer", fontFamily: "inherit", fontWeight: sel ? 600 : 400,
+                    transition: "all 0.15s",
+                  }}>
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: 20 }}>
         <label style={label}>Описание <span style={{ color: T.textLight }}>(необязательно)</span></label>
@@ -694,19 +796,380 @@ function AddExpense({ budget, onSave, onBack }) {
         />
       </div>
 
-      <button onClick={save} disabled={!amount || !category}
+      <button onClick={save} disabled={!canSave}
         style={{
           ...btnPrimary, width: "100%",
-          opacity: (!amount || !category) ? 0.4 : 1,
-          background: saved ? T.success : T.accent,
+          opacity: !canSave ? 0.4 : 1,
+          background: saved ? T.success : (fromPocket ? "#6B8FBF" : T.accent),
         }}>
-        {saved ? "Сохранено ✓" : "Внести трату"}
+        {saved ? "Сохранено ✓" : (fromPocket ? "Списать из кармашка" : "Внести трату")}
       </button>
     </div>
   );
 }
 
+// ─── POCKET DETAIL MODAL ────────────────────────────────────────────
+function PocketDetailModal({ pocket, balance, budget, transactions, pocketWithdrawalIds, onClose, onAdjust, onSpend, onArchive }) {
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const h = await db.getPocketTransactions(pocket.name);
+      setHistory(h);
+      setHistoryLoaded(true);
+    })();
+  }, [pocket.name]);
+
+  // Данные текущего месяца
+  const currentMonth = monthKey();
+  const cat = budget?.categories?.find(c => c.name === pocket.name);
+  const allocated = cat?.amount || 0;
+  const monthlySpent = (transactions || [])
+    .filter(t => t.category === pocket.name && !pocketWithdrawalIds.has(t.id))
+    .reduce((s, t) => s + t.amount, 0);
+  const expectedDeposit = Math.max(0, allocated - monthlySpent);
+
+  const doAdjust = async () => {
+    const val = parseFloat(adjustAmount);
+    if (!val || isNaN(val)) return;
+    await onAdjust(pocket.name, val, adjustNote.trim());
+    setAdjustAmount(""); setAdjustNote(""); setShowAdjust(false);
+  };
+
+  const pocketColor = "#6B8FBF";
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(61,52,41,0.4)",
+      backdropFilter: "blur(4px)", display: "flex", flexDirection: "column",
+      justifyContent: "flex-start", alignItems: "center",
+      zIndex: 100, padding: "40px 16px 16px", overflow: "auto",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: T.card, borderRadius: 20, padding: "24px 20px",
+        width: "100%", maxWidth: 440, boxShadow: "0 4px 32px rgba(0,0,0,0.15)",
+        animation: "slideUp 0.2s ease",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16, color: pocketColor }}>▤</span>
+            <span style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{pocket.name}</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: T.textLight, cursor: "pointer" }}>×</button>
+        </div>
+
+        {/* Balance */}
+        <div style={{
+          background: "rgba(107,143,191,0.06)", borderRadius: 14, padding: "16px 18px",
+          marginBottom: 16, border: "1px solid rgba(107,143,191,0.15)",
+        }}>
+          <div style={{ color: T.textMid, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6 }}>Накоплено</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: T.text }}>
+            {fmt(balance)}
+          </div>
+          {pocket.target > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textMid, marginBottom: 4 }}>
+                <span>Цель: {fmt(pocket.target)}</span>
+                <span>{Math.min(100, Math.round((balance / pocket.target) * 100))}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: T.barTrack }}>
+                <div style={{
+                  height: "100%", borderRadius: 3, background: pocketColor,
+                  width: `${Math.min(100, (balance / pocket.target) * 100)}%`,
+                  transition: "width 0.5s",
+                }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* This month info */}
+        {allocated > 0 && (
+          <div style={{
+            background: T.accentLight, borderRadius: 12, padding: "12px 16px",
+            marginBottom: 16, border: "1px solid rgba(212,121,60,0.2)",
+          }}>
+            <div style={{ color: T.textMid, fontSize: 12, marginBottom: 6 }}>В этом месяце</div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.text }}>
+              <span>Выделено: {fmt(allocated)}</span>
+              <span>Потрачено: {fmt(monthlySpent)}</span>
+            </div>
+            <div style={{ color: T.accent, fontSize: 13, fontWeight: 600, marginTop: 4 }}>
+              В копилку: ~{fmt(expectedDeposit)}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button onClick={() => setShowAdjust(!showAdjust)} style={{ ...btnSecondary, flex: 1, padding: "10px 12px", fontSize: 13 }}>
+            Корректировка
+          </button>
+          <button onClick={() => onSpend(pocket)} style={{ ...btnPrimary, flex: 1, padding: "10px 12px", fontSize: 13 }}>
+            Потратить
+          </button>
+        </div>
+
+        {/* Manual adjustment */}
+        {showAdjust && (
+          <div style={{
+            background: T.bg, borderRadius: 12, padding: 14, marginBottom: 16,
+            border: `1px solid ${T.cardBorder}`,
+          }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input type="number" placeholder="Сумма (+ или −)" value={adjustAmount}
+                onChange={e => setAdjustAmount(e.target.value)}
+                style={{ ...inputSmall, flex: 1 }} autoFocus />
+            </div>
+            <input placeholder="Комментарий" value={adjustNote}
+              onChange={e => setAdjustNote(e.target.value)}
+              style={{ ...inputSmall, marginBottom: 8 }}
+              onKeyDown={e => e.key === "Enter" && doAdjust()} />
+            <button onClick={doAdjust} disabled={!adjustAmount || parseFloat(adjustAmount) === 0}
+              style={{ ...btnPrimary, width: "100%", padding: "10px", fontSize: 13, opacity: (!adjustAmount || parseFloat(adjustAmount) === 0) ? 0.4 : 1 }}>
+              Применить
+            </button>
+          </div>
+        )}
+
+        {/* History */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ color: T.textMid, fontSize: 12, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>История</div>
+          {!historyLoaded && <div style={{ color: T.textLight, fontSize: 13 }}>Загрузка...</div>}
+          {historyLoaded && history.length === 0 && <div style={{ color: T.textLight, fontSize: 13 }}>Пока пусто</div>}
+          {history.slice(0, 20).map(h => (
+            <div key={h.id} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "8px 0", borderBottom: `1px solid ${T.cardBorder}`,
+            }}>
+              <div>
+                <div style={{ fontSize: 13, color: T.text }}>
+                  {h.type === 'withdrawal' ? 'Списание' : 'Корректировка'}
+                </div>
+                {h.note && <div style={{ fontSize: 11, color: T.textLight }}>{h.note}</div>}
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{
+                  fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
+                  color: h.amount < 0 ? T.danger : T.success,
+                }}>
+                  {h.amount > 0 ? '+' : ''}{fmt(h.amount)}
+                </div>
+                <div style={{ fontSize: 11, color: T.textLight }}>{h.date}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Archive */}
+        <button onClick={() => { onArchive(pocket.name); onClose(); }}
+          style={{ background: "none", border: "none", color: T.danger, fontSize: 13, cursor: "pointer", fontFamily: "inherit", padding: "8px 0" }}>
+          Архивировать кармашек
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── POCKETS SCREEN ─────────────────────────────────────────────────
+function Pockets({ pockets, pocketBalances, budget, transactions, pocketWithdrawalIds, onCreatePocket, onAdjust, onArchive, onSpend, onRefresh }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTarget, setNewTarget] = useState("");
+  const [newInitial, setNewInitial] = useState("");
+  const [detailPocket, setDetailPocket] = useState(null);
+
+  const pocketColor = "#6B8FBF";
+  const totalBalance = Object.values(pocketBalances).reduce((a, b) => a + b, 0);
+
+  const create = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    await onCreatePocket(name, parseFloat(newTarget) || 0, parseFloat(newInitial) || 0);
+    setNewName(""); setNewTarget(""); setNewInitial(""); setShowCreate(false);
+  };
+
+  return (
+    <div style={{ padding: "20px 16px", maxWidth: 480, margin: "0 auto" }}>
+      {detailPocket && (
+        <PocketDetailModal
+          pocket={detailPocket}
+          balance={pocketBalances[detailPocket.name] || 0}
+          budget={budget}
+          transactions={transactions}
+          pocketWithdrawalIds={pocketWithdrawalIds}
+          onClose={() => setDetailPocket(null)}
+          onAdjust={async (name, amount, note) => { await onAdjust(name, amount, note); setDetailPocket(null); }}
+          onSpend={(p) => { setDetailPocket(null); onSpend(p); }}
+          onArchive={onArchive}
+        />
+      )}
+
+      <h2 style={{ ...heading, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: pocketColor }}>▤</span> Кармашки
+      </h2>
+
+      {/* Total */}
+      {pockets.length > 0 && (
+        <div style={{
+          background: "rgba(107,143,191,0.06)", borderRadius: 14, padding: "16px 18px",
+          marginBottom: 20, border: "1px solid rgba(107,143,191,0.15)",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: T.textMid, fontSize: 13 }}>Общий баланс кармашков</span>
+            <span style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: T.text }}>
+              {fmt(totalBalance)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Pocket cards */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+        {pockets.map(p => {
+          const bal = pocketBalances[p.name] || 0;
+          const cat = budget?.categories?.find(c => c.name === p.name);
+          const monthly = cat?.amount || 0;
+          return (
+            <div key={p.name} onClick={() => setDetailPocket(p)} style={{
+              background: T.card, borderRadius: 14, padding: "14px 16px",
+              border: `1px solid ${T.cardBorder}`, cursor: "pointer",
+              transition: "box-shadow 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 2px 12px ${T.shadow}`; }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: pocketColor, fontSize: 14 }}>▤</span>
+                  <span style={{ fontSize: 14, color: T.text, fontWeight: 500 }}>{p.name}</span>
+                </div>
+                <span style={{ fontSize: 16, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: T.text }}>
+                  {fmt(bal)}
+                </span>
+              </div>
+              {p.target > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ height: 6, borderRadius: 3, background: T.barTrack }}>
+                    <div style={{
+                      height: "100%", borderRadius: 3, background: pocketColor,
+                      width: `${Math.min(100, (bal / p.target) * 100)}%`,
+                      transition: "width 0.5s",
+                    }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, fontSize: 11, color: T.textLight, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <span>{Math.min(100, Math.round((bal / p.target) * 100))}%</span>
+                    <span>{fmt(p.target)}</span>
+                  </div>
+                </div>
+              )}
+              {monthly > 0 && (
+                <div style={{ fontSize: 12, color: T.textMid, marginTop: 2 }}>
+                  +{fmt(monthly)}/мес
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Empty state */}
+      {pockets.length === 0 && !showCreate && (
+        <div style={{ textAlign: "center", padding: "40px 20px", color: T.textMid }}>
+          <div style={{ fontSize: 40, marginBottom: 16, opacity: 0.3 }}>▤</div>
+          <p style={{ fontSize: 15, marginBottom: 8, lineHeight: 1.6 }}>
+            Кармашки помогают копить на цели.
+          </p>
+          <p style={{ fontSize: 13, color: T.textLight, marginBottom: 20, lineHeight: 1.5 }}>
+            Создай кармашек и привяжи его к категории в бюджете. Неизрасходованный остаток категории в конце месяца перейдёт в копилку.
+          </p>
+        </div>
+      )}
+
+      {/* Create pocket form */}
+      {showCreate ? (
+        <div style={{
+          background: T.card, borderRadius: 14, padding: 16,
+          border: `1px dashed rgba(107,143,191,0.4)`, marginBottom: 16,
+        }}>
+          <div style={{ marginBottom: 10 }}>
+            <input placeholder="Название (напр. Отпуск)" value={newName}
+              onChange={e => setNewName(e.target.value)}
+              style={inputSmall} autoFocus />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <input type="number" placeholder="Цель (необязательно)" value={newTarget}
+              onChange={e => setNewTarget(e.target.value)}
+              style={{ ...inputSmall, flex: 1 }} />
+            <input type="number" placeholder="Нач. баланс" value={newInitial}
+              onChange={e => setNewInitial(e.target.value)}
+              style={{ ...inputSmall, flex: 1 }} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setShowCreate(false)} style={{ ...btnSecondary, flex: 1, padding: "10px", fontSize: 13 }}>Отмена</button>
+            <button onClick={create} disabled={!newName.trim()}
+              style={{ ...btnPrimary, flex: 2, padding: "10px", fontSize: 13, opacity: !newName.trim() ? 0.4 : 1 }}>
+              Создать
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setShowCreate(true)} style={{ ...btnSecondary, width: "100%", padding: "12px" }}>
+          + Новый кармашек
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN ───────────────────────────────────────────────────────────
+// ─── Pocket balance calculation ─────────────────────────────────────
+function calculatePocketBalances(pockets, allBudgets, allCategoryTxns, pocketTxns, currentMonth) {
+  const balances = {};
+  // Индексируем транзакции по категории+месяц
+  const txnMap = {};
+  allCategoryTxns.forEach(t => {
+    const m = t.date.slice(0, 7);
+    const key = `${t.category}::${m}`;
+    txnMap[key] = (txnMap[key] || 0) + t.amount;
+  });
+  // Собираем withdrawal ids чтобы исключить их из месячных трат
+  const withdrawalIds = new Set(
+    pocketTxns.filter(t => t.type === 'withdrawal' && t.transaction_id).map(t => t.transaction_id)
+  );
+  // Пересчитываем txnMap без withdrawal транзакций
+  const txnMapClean = {};
+  allCategoryTxns.forEach(t => {
+    if (withdrawalIds.has(t.id)) return;
+    const m = t.date.slice(0, 7);
+    const key = `${t.category}::${m}`;
+    txnMapClean[key] = (txnMapClean[key] || 0) + t.amount;
+  });
+
+  for (const pocket of pockets) {
+    let balance = pocket.initial_balance || 0;
+    // Прибавить остатки за все ПРОШЛЫЕ месяцы
+    for (const budget of allBudgets) {
+      if (budget.month >= currentMonth) continue;
+      const cat = budget.categories.find(c => c.name === pocket.name);
+      if (!cat) continue;
+      const spent = txnMapClean[`${pocket.name}::${budget.month}`] || 0;
+      balance += cat.amount - spent;
+    }
+    // Pocket transactions (withdrawals + manual adjustments)
+    const pTxns = pocketTxns.filter(t => t.pocket_name === pocket.name);
+    balance += pTxns.reduce((sum, t) => sum + t.amount, 0);
+    balances[pocket.name] = balance;
+  }
+  return balances;
+}
+
 function BudgetApp() {
   const [screen, setScreen] = useState("dashboard");
   const [budget, setBudget] = useState(null);
@@ -715,6 +1178,33 @@ function BudgetApp() {
   const [viewMonth, setViewMonth] = useState(monthKey());
   const [nextMonthExists, setNextMonthExists] = useState(false);
   const [templateBudget, setTemplateBudget] = useState(null);
+
+  // Pockets state
+  const [pockets, setPockets] = useState([]);
+  const [pocketBalances, setPocketBalances] = useState({});
+  const [pocketWithdrawalIds, setPocketWithdrawalIds] = useState(new Set());
+  const pocketNames = useMemo(() => new Set(pockets.map(p => p.name)), [pockets]);
+
+  const loadPockets = useCallback(async () => {
+    const p = await db.getPockets();
+    if (p.length === 0) {
+      setPockets([]);
+      setPocketBalances({});
+      setPocketWithdrawalIds(new Set());
+      return;
+    }
+    const names = p.map(pk => pk.name);
+    const [allB, allCT, allPT, wIds] = await Promise.all([
+      db.getAllBudgets(),
+      db.getAllTransactionsForCategories(names),
+      db.getAllPocketTransactions(),
+      db.getPocketWithdrawalIds(),
+    ]);
+    const balances = calculatePocketBalances(p, allB, allCT, allPT, monthKey());
+    setPockets(p);
+    setPocketBalances(balances);
+    setPocketWithdrawalIds(new Set(wIds));
+  }, []);
 
   useEffect(() => {
     setLoaded(false);
@@ -734,9 +1224,10 @@ function BudgetApp() {
         const nb = await db.getBudget(shiftMonth(viewMonth, 1));
         setNextMonthExists(!!nb);
       }
+      await loadPockets();
       setLoaded(true);
     })();
-  }, [viewMonth]);
+  }, [viewMonth, loadPockets]);
 
   const changeMonth = useCallback((m) => {
     setTemplateBudget(null);
@@ -752,19 +1243,47 @@ function BudgetApp() {
     setScreen("dashboard");
   }, []);
 
-  const addTransaction = useCallback(async (t) => {
+  const addTransaction = useCallback(async (t, fromPocket = false) => {
     const tMonth = t.date.slice(0, 7);
     if (tMonth === viewMonth) {
       setTransactions(prev => [...prev, t]);
     }
     await db.addTransaction(tMonth, t);
-  }, [viewMonth]);
+    if (fromPocket) {
+      await db.withdrawFromPocket(t.category, t.amount, t.id, t.note, t.date);
+      await loadPockets();
+    }
+  }, [viewMonth, loadPockets]);
 
   const planNextMonth = useCallback(() => {
     setTemplateBudget(budget);
     setViewMonth(shiftMonth(monthKey(), 1));
     setScreen("plan");
   }, [budget]);
+
+  // Pocket callbacks
+  const createPocket = useCallback(async (name, target, initialBalance) => {
+    await db.createPocket(name, target, initialBalance);
+    await loadPockets();
+  }, [loadPockets]);
+
+  const archivePocket = useCallback(async (name) => {
+    await db.archivePocket(name);
+    await loadPockets();
+  }, [loadPockets]);
+
+  const manualAdjustPocket = useCallback(async (name, amount, note) => {
+    await db.manualAdjust(name, amount, note);
+    await loadPockets();
+  }, [loadPockets]);
+
+  const spendFromPocket = useCallback((pocket) => {
+    setScreen("expense");
+    // Pass pocket info via a ref-like state
+    setPendingPocket(pocket);
+  }, []);
+
+  const [pendingPocket, setPendingPocket] = useState(null);
 
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -797,6 +1316,7 @@ function BudgetApp() {
           { key: "dashboard", label: "Дашборд", icon: "◉" },
           { key: "plan", label: "Бюджет", icon: "☰" },
           { key: "expense", label: "Трата", icon: "+" },
+          { key: "pockets", label: "Кармашки", icon: "▤" },
         ].map(tab => (
           <button key={tab.key} onClick={() => setScreen(tab.key)}
             style={{
@@ -813,9 +1333,10 @@ function BudgetApp() {
       </div>
 
       <div style={{ animation: "fadeIn 0.25s ease" }}>
-        {screen === "dashboard" && <Dashboard budget={budget} transactions={transactions} onNavigate={setScreen} onAddTransaction={addTransaction} viewMonth={viewMonth} onChangeMonth={changeMonth} onPlanNextMonth={planNextMonth} nextMonthExists={nextMonthExists} />}
-        {screen === "plan" && <PlanBudget budget={budget} onSave={saveBudget} onBack={() => setScreen("dashboard")} month={viewMonth} templateBudget={templateBudget} />}
-        {screen === "expense" && <AddExpense budget={budget} onSave={addTransaction} onBack={() => setScreen("dashboard")} />}
+        {screen === "dashboard" && <Dashboard budget={budget} transactions={transactions} onNavigate={setScreen} onAddTransaction={addTransaction} viewMonth={viewMonth} onChangeMonth={changeMonth} onPlanNextMonth={planNextMonth} nextMonthExists={nextMonthExists} pocketWithdrawalIds={pocketWithdrawalIds} pocketNames={pocketNames} />}
+        {screen === "plan" && <PlanBudget budget={budget} onSave={saveBudget} onBack={() => setScreen("dashboard")} month={viewMonth} templateBudget={templateBudget} pocketNames={pocketNames} />}
+        {screen === "expense" && <AddExpense budget={budget} onSave={addTransaction} onBack={() => setScreen("dashboard")} pockets={pockets} pocketBalances={pocketBalances} pendingPocket={pendingPocket} onClearPendingPocket={() => setPendingPocket(null)} />}
+        {screen === "pockets" && <Pockets pockets={pockets} pocketBalances={pocketBalances} budget={budget} transactions={transactions} pocketWithdrawalIds={pocketWithdrawalIds} onCreatePocket={createPocket} onAdjust={manualAdjustPocket} onArchive={archivePocket} onSpend={spendFromPocket} onRefresh={loadPockets} />}
       </div>
     </div>
   );
