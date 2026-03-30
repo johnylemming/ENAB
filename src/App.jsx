@@ -1311,7 +1311,7 @@ function BudgetApp() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Nunito', -apple-system, sans-serif", paddingBottom: 40 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Nunito', -apple-system, sans-serif", paddingBottom: 40, overflowX: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1323,32 +1323,39 @@ function BudgetApp() {
         button:active { transform: scale(0.97); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        .nav-scroll::-webkit-scrollbar { display: none; }
+        .nav-scroll { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
       {/* Nav */}
-      <div style={{
-        display: "flex", justifyContent: "center", gap: 4, padding: "14px 16px 8px",
+      <div className="nav-scroll" style={{
         position: "sticky", top: 0, background: T.bg, zIndex: 10,
         borderBottom: `1px solid ${T.cardBorder}`,
+        overflowX: "auto", padding: "14px 16px 8px",
       }}>
-        {[
-          { key: "dashboard", label: "Дашборд", icon: "◉" },
-          { key: "plan", label: "Бюджет", icon: "☰" },
-          { key: "expense", label: "Трата", icon: "+" },
-          { key: "pockets", label: "Кармашки", icon: "▤" },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setScreen(tab.key)}
-            style={{
-              background: screen === tab.key ? T.accentLight : "transparent",
-              border: screen === tab.key ? `1px solid rgba(212,121,60,0.3)` : "1px solid transparent",
-              color: screen === tab.key ? T.accent : T.textLight,
-              borderRadius: 10, padding: "8px 18px", fontSize: 13,
-              cursor: "pointer", fontFamily: "inherit", fontWeight: screen === tab.key ? 700 : 400,
-            }}>
-            <span style={{ marginRight: 5 }}>{tab.icon}</span>{tab.label}
-          </button>
-        ))}
-        <LogoutButton />
+        <div style={{
+          display: "flex", gap: 4, width: "fit-content", margin: "0 auto",
+        }}>
+          {[
+            { key: "dashboard", label: "Дашборд", icon: "◉" },
+            { key: "plan", label: "Бюджет", icon: "☰" },
+            { key: "expense", label: "Трата", icon: "+" },
+            { key: "pockets", label: "Кармашки", icon: "▤" },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setScreen(tab.key)}
+              style={{
+                background: screen === tab.key ? T.accentLight : "transparent",
+                border: screen === tab.key ? `1px solid rgba(212,121,60,0.3)` : "1px solid transparent",
+                color: screen === tab.key ? T.accent : T.textLight,
+                borderRadius: 10, padding: "8px 18px", fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit", fontWeight: screen === tab.key ? 700 : 400,
+                whiteSpace: "nowrap", flexShrink: 0,
+              }}>
+              <span style={{ marginRight: 5 }}>{tab.icon}</span>{tab.label}
+            </button>
+          ))}
+          <LogoutButton />
+        </div>
       </div>
 
       <div style={{ animation: "fadeIn 0.25s ease" }}>
