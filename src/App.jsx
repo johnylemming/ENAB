@@ -241,6 +241,10 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMon
     return map;
   }, [regularTransactions]);
   const totalSpent = Object.values(spent).reduce((a, b) => a + b, 0);
+  const totalOverspend = cats.reduce((sum, c) => {
+    const rem = c.amount - (spent[c.name] || 0);
+    return rem < 0 ? sum + Math.abs(rem) : sum;
+  }, 0);
   const isCurrent = isCurrentMonth(viewMonth);
   const days = isCurrent ? daysLeft() : 0;
   const maxMonth = shiftMonth(monthKey(), 1);
@@ -340,6 +344,18 @@ function Dashboard({ budget, transactions, onNavigate, onAddTransaction, viewMon
           <span style={{ color: T.danger, fontSize: 13 }}>Перераспределено</span>
           <span style={{ color: T.danger, fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
             {fmt(Math.abs(unallocated))}
+          </span>
+        </div>
+      )}
+      {totalOverspend > 0 && (
+        <div style={{
+          background: "rgba(217,79,61,0.06)", borderRadius: 12, padding: "10px 16px", marginBottom: 16,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          border: "1px solid rgba(217,79,61,0.15)",
+        }}>
+          <span style={{ color: T.danger, fontSize: 13 }}>Перерасход по категориям</span>
+          <span style={{ color: T.danger, fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+            {fmt(totalOverspend)}
           </span>
         </div>
       )}
