@@ -1171,7 +1171,10 @@ function calculatePocketBalances(pockets, allBudgets, allCategoryTxns, pocketTxn
   for (const pocket of pockets) {
     let balance = pocket.initial_balance || 0;
     // Месяц создания кармашка — считаем только с него (initial_balance покрывает всё до)
-    const createdMonth = pocket.created_at ? pocket.created_at.slice(0, 7) : currentMonth;
+    const firstBudgetWithCat = allBudgets.find(b => b.categories?.some(c => c.name === pocket.name));
+    const createdMonth = firstBudgetWithCat
+      ? firstBudgetWithCat.month
+      : (pocket.created_at ? pocket.created_at.slice(0, 7) : currentMonth);
     // Прибавить остатки за прошлые месяцы начиная с месяца создания
     for (const budget of allBudgets) {
       if (budget.month >= currentMonth) continue;
@@ -1233,8 +1236,12 @@ function BudgetApp() {
       if (b) {
         setBudget(b);
       } else if (isCurrentMonth(viewMonth)) {
-        setBudget(DEFAULT_BUDGET);
-        await db.saveBudget(DEFAULT_BUDGET);
+        const prevBudget = await db.getBudget(shiftMonth(viewMonth, -1));
+        const newBudget = prevBudget
+          ? { ...prevBudget, month: viewMonth }
+          : { ...DEFAULT_BUDGET, month: viewMonth };
+        setBudget(newBudget);
+        await db.saveBudget(newBudget);
       } else {
         setBudget(null);
       }
